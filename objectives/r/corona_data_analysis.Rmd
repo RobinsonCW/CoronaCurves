@@ -1,0 +1,181 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r}
+library(tidyverse)
+# Date Manipulation
+library(lubridate)
+# Metrics
+library(MLmetrics)
+# Time Series Analysis
+library(tseries)
+library(forecast)
+library(TSstudio)
+```
+
+```{r}
+
+data <- read.csv("../../data/Corona_Curves_TX_NY_NJ_V2.csv")
+
+data <- data %>%
+  filter(State == 'TX')
+
+
+```
+
+
+
+
+
+```{r}
+print(data)
+```
+
+
+
+```{r}
+data$Pop_Pct_Log <- log(data$Pop_Pct)
+
+train <- data %>%
+  filter(Curve_Day <= 18)
+
+test <- data %>%
+  filter(Curve_Day > 18)
+```
+
+
+
+```{r}
+tsdata <- ts(train$Pop_Pct_Log, frequency = 365 )
+```
+
+
+
+```{r}
+tsdata2 <- ts(test$Pop_Pct_Log, frequency = 365 , start = c(1, 19))
+```
+
+
+```{r}
+# tsdata_split <- ts_split(ts.obj = tsdata)
+# 
+# train <- tsdata_split$train
+# test <- tsdata_split$test
+# 
+# length(tsdata_split)
+# 
+# length(train)
+# length(test)
+
+tsdata
+```
+
+
+```{r}
+# plot(train)
+```
+
+
+
+```{r}
+
+autoarima1 <- auto.arima(tsdata)
+
+# ar1 <- arima(tsdata, order=c(7, 1, 7))
+
+
+ar1 <- arima(tsdata, order=c(7, 1, 7))
+
+
+# 7 - 0.1796736 
+
+
+```
+
+```{r}
+
+# auto-arima
+# forcast1 <- forecast(autoarima1, h=30)
+
+# ar 1
+forcast1 <- forecast(ar1, h=31)
+
+```
+
+```{r}
+
+texas_population = 29900000
+forcast1
+```
+```{r}
+MAE(y_pred = forcast1$fitted, y_true = train$Pop_Pct_Log)
+```
+
+
+```{r}
+# POINT ESTIMATE (mean)
+
+# test1$count <- forcast1$mean
+# 
+MAPE(y_pred = forcast1$fitted, y_true = train$Pop_Pct_Log)
+#summary(autoarima1)
+
+#exp(forcast1$x) * texas_population
+
+#exp(forcast1$fitted) * texas_population
+
+# forcast1$residuals
+```
+```{r}
+exp(forcast1$mean) * texas_population
+```
+
+
+```{r}
+plot(forcast1)
+lines(tsdata2, col="red")
+legend(x = "topleft", legend = c("Predicted", "Actual Data"), col = c("blue", "red"), lty = c(1, 1))
+```
+
+```{r}
+plot(forcast1$residuals)
+```
+
+```{r}
+qqnorm(forcast1$residuals)
+```
+
+
+
+```{r}
+acf(forcast1$residuals)
+```
+
+```{r}
+pacf(forcast1$residuals)
+```
+
+
+
+```{r}
+summary(ar1)
+```
+
+
+```{r}
+accuracy(ar1)
+```
+
+
+
+
+
+
+
+
+
