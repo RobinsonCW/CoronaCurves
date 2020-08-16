@@ -1,0 +1,400 @@
+---
+title: "Texas Covid-19 Predictions"
+author: "Chance Robinson"
+date: "8/9/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+Time Series analysis for predicting the daily new COVID-19 case counts for Texas from 07/07/2020 to 08/07/2020.
+
+
+# Library Imports
+
+```{r library-imports, quietely=TRUE, warn.conflicts=FALSE, message=FALSE}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+# Date Manipulation
+library(lubridate)
+# Metrics
+library(MLmetrics)
+# Time Series Analysis
+library(tseries)
+library(forecast)
+library(TSstudio)
+```
+
+
+# Load Data
+
+
+## Training Set
+
+```{r load-data-one}
+
+data <- read.csv("../../data/Corona_Curves_TX_NY_NJ.csv")
+
+cols_to_keep <- c("State", "Date", "Daily_New_Cases", "Curve_Day", "Pop_Pct")
+
+df_all <- data[cols_to_keep]
+
+df_ny <- df_all %>%
+  filter(State == 'NY')
+
+df_nj <- df_all %>%
+  filter(State == 'NJ')
+
+df_tx <- df_all %>%
+  filter(State == 'TX')
+
+head(df_tx)
+
+
+```
+
+## Validation Set
+
+```{r load-data-two}
+
+data2 <- read.csv("../../data/Corona_MAE.csv")
+
+
+# rename the columns to match that of the original csv
+test <- plyr::rename(data2, replace = c("TX.Date"="Date", "TX.New.Cases"="Daily_New_Cases"))
+
+texas_population = 29900000
+
+# create a new column that represents the Population Percentage
+test <- test %>%
+  mutate(Pop_Pct = Daily_New_Cases / texas_population, State = "TX")
+  
+# reorder the columns 
+test <- test[c("State", "Date", "Daily_New_Cases", "Curve_Day", "Pop_Pct")]
+
+head(test)
+
+
+```
+
+
+# Exploratory Data Analysis
+
+
+## New York Daily Case Counts
+
+```{r eda-new-york-counts}
+
+ggplot(data=df_ny, aes(x = Curve_Day, y = Daily_New_Cases)) +
+      geom_line() + 
+      ggtitle("Daily New Cases (New York)") +
+      labs(x = "Curve Day", y = "Number of Cases")
+```
+```{r eda-new-york-summary}
+summary(df_ny)
+```
+
+
+## New Jersey Daily Case Counts
+
+```{r eda-new-jersey-counts}
+
+ggplot(data=df_nj, aes(x = Curve_Day, y = Daily_New_Cases)) +
+      geom_line() + 
+      ggtitle("Daily New Cases (New Jersey)") +
+      labs(x = "Curve Day", y = "Number of Cases")
+```
+```{r eda-new-jersey-summary}
+summary(df_nj)
+```
+
+
+
+## Texas Daily Case Counts
+
+```{r eda-texas-counts}
+
+ggplot(data=df_tx, aes(x = Curve_Day, y = Daily_New_Cases)) +
+      geom_line() + 
+      ggtitle("Daily New Cases (Texas)") +
+      labs(x = "Curve Day", y = "Number of Cases")
+```
+```{r eda-texas-summary}
+summary(df_tx)
+```
+
+Log the population percentage variable to address the stationarity assumption.
+
+```{r}
+
+df_tx$Pop_Pct_Log <- log(df_tx$Pop_Pct)
+test$Pop_Pct_Log <- log(test$Pop_Pct)
+
+train <- df_tx
+
+```
+
+
+
+
+# Time Series
+
+
+As the information from the New York and New Jersey data sets would not make sense to include in a basic arima model, it has been excluded for now.
+
+
+```{r create-time-series-data}
+
+tsdata1 <- ts(train$Pop_Pct_Log, frequency = 365)
+
+tsdata2 <- ts(test$Pop_Pct_Log, frequency = 365 , start = c(1, 19))
+
+
+```
+
+## Time Series 1 
+
+The original Texas data from June 19th, 2020 to July 6th, 2020.
+
+```{r display-time-series-one}
+tsdata1
+```
+
+
+## Time Series 2
+
+The actual Texas data from July 7th, 2020 to August 7th, 2020.
+
+```{r display-time-series-two}
+tsdata2
+
+# store the estimates in a list to be used later
+logged_estimates <- tsdata2[1:32]
+
+```
+
+
+## ARIMA Model
+
+- AR = 7
+- MA = 7
+
+
+The ARIMA model seemed to outperform the AUTO-ARIMA one in the ability to pick up the cyclical trends in the data.
+
+
+```{r}
+
+# autoarima1 <- auto.arima(tsdata1)
+
+arima1 <- arima(tsdata1, order=c(7, 1, 7))
+
+
+```
+
+```{r}
+
+# auto-arima
+# forcast1 <- forecast(autoarima1, h=32)
+
+# ar 1
+forcast1 <- forecast(arima1, h=32)
+
+```
+
+
+## Plot the Forcast
+
+You can see that as there's nothing in the training data to indicate that the slope will flatten or turn negative, we need some way of "bending" the curve to reflect the trends seen already in the other states.
+
+```{r}
+plot(forcast1)
+legend(x = "topleft", legend = c("Predicted"), col = c("blue"), lty = c(1, 1))
+```
+
+
+## Dampening Technique
+
+Visually inspecting the New york and New Jersey plots, you can see that at around day 30 each the graphs seemed to hit an inflection point.
+
+In an attempt to bend the curve downwards, we will gradually reduce the counts over what our predictions from the arima model produced from this same point in the Texas data.
+
+The adjustment starting point was 1/10th of the standard deviation from the logged estimates, which increases by 0.0025 for each iteration of the loop.
+
+
+```{r}
+
+# adjust by 1/10th of the standard deviation from the logged estimates
+dampen = sd(logged_estimates) / 10  # 0.02425344
+
+# day 31
+# forcast1$mean[13:32] <- forcast1$mean[13:32] - (-forcast1$mean[13:32] * dampen)
+
+for (i in 13:32) {
+  # print(forcast1$mean[[i]])
+  # print(i)
+  forcast1$mean[i] <- forcast1$mean[i] - (-forcast1$mean[i] * dampen)
+  dampen =  dampen + 0.0025
+}
+
+# forcast1$mean
+
+# sd(logged_estimates) / 10
+
+```
+
+
+
+
+## Predictions
+
+As the predictions were based off the logged population percentage variable, we need to exponentiate it and then multiply by the Texas Population to get it back to a daily count.
+
+```{r}
+y_hat <- round(exp(forcast1$mean) * texas_population)
+y_hat
+
+```
+
+
+## Plot the Predicted and Actual Results
+
+```{r}
+plot(forcast1)
+lines(tsdata2, col="red")
+legend(x = "topleft", legend = c("Predicted", "Actual Data"), col = c("blue", "red"), lty = c(1, 1))
+```
+
+```{r}
+plot(forcast1$residuals)
+```
+
+```{r}
+qqnorm(forcast1$residuals)
+```
+
+## Analyze ACF/ PACF Plots
+
+### ACF
+
+The ACF plot gradually tapers off at the end
+
+```{r}
+acf(forcast1$residuals)
+```
+
+### PACF
+
+The PACF plot also gradually tapers off at the end indicating a probable ARMA combination.
+
+
+
+```{r}
+pacf(forcast1$residuals)
+```
+
+
+# Predictions
+
+
+## Mean Absolute Error
+
+The final MAE score was 1809.844, which is the average error rate after negating the sign for all 32 predictions.
+
+```{r}
+# summary(arima1)
+# accuracy(arima1)
+
+MAE(y_pred = (round(exp(forcast1$mean) * texas_population)), y_true = test$Daily_New_Cases)
+
+```
+
+
+
+
+```{r}
+Predictions <- y_hat[1:32]
+
+df_out <- cbind(data2, Predictions)
+```
+
+
+## Daily New Case Prediction Line Chart
+
+
+```{r}
+
+
+
+df_1 <- df_tx %>%
+   # mutate(Type = 'Actual') %>%
+   select(Date, Curve_Day, Daily_New_Cases)
+
+df_2 <- df_out %>%
+   # mutate(Type = 'Actual') %>%
+   select(TX.Date, Curve_Day, TX.New.Cases)
+
+
+df_3 <- df_out %>%
+   # mutate(Type = 'Predicted') %>%
+   select(TX.Date, Curve_Day, Predictions)
+
+
+df_1 <- plyr::rename(df_1, replace = c("Daily_New_Cases"="New_Cases"))
+df_2 <- plyr::rename(df_2, replace = c("TX.Date"="Date", "TX.New.Cases"="New_Cases"))
+df_3 <- plyr::rename(df_3, replace = c("TX.Date"="Date", "Predictions"="New_Cases"))
+
+
+df_X <- df_2 %>%
+  mutate(Type = 'Actual') %>%
+  bind_rows(df_3 %>%
+    mutate(Type = 'Predicted'))
+
+df_X <- df_X %>%
+  bind_rows(df_1 %>%
+    mutate(Type = 'Train'))
+
+
+```
+```{r}
+ggplot(df_X,aes(y = New_Cases, x = Curve_Day, color = Type)) + 
+  geom_line() +
+  ggtitle("Daily New Case Predictions (Texas)") +
+  labs(x = "Curve Day", y = "Number of Cases")
+
+```
+
+
+## Final Output
+
+The original `Corona_MAE.csv` validation set combined with the predictions and absolute difference.
+
+```{r}
+
+df_out <- df_out %>%
+  mutate(Absolute.Difference = abs(TX.New.Cases - Predictions))
+
+df_out
+
+# write.csv(df_out,"./Corona_MAE.csv", row.names = FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

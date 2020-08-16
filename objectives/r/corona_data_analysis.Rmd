@@ -51,48 +51,26 @@ test <- data %>%
 
 
 ```{r}
-tsdata <- ts(train$Pop_Pct_Log, frequency = 365 )
-```
 
+tsdata1 <- ts(train$Pop_Pct_Log, frequency = 365)
 
-
-```{r}
 tsdata2 <- ts(test$Pop_Pct_Log, frequency = 365 , start = c(1, 19))
-```
 
 
-```{r}
-# tsdata_split <- ts_split(ts.obj = tsdata)
-# 
-# train <- tsdata_split$train
-# test <- tsdata_split$test
-# 
-# length(tsdata_split)
-# 
-# length(train)
-# length(test)
-
-tsdata
-```
-
-
-```{r}
-# plot(train)
 ```
 
 
 
 ```{r}
-
-autoarima1 <- auto.arima(tsdata)
-
-# ar1 <- arima(tsdata, order=c(7, 1, 7))
+tsdata1
+```
 
 
-ar1 <- arima(tsdata, order=c(7, 1, 7))
+```{r}
 
+autoarima1 <- auto.arima(tsdata1)
 
-# 7 - 0.1796736 
+arima1 <- arima(tsdata1, order=c(7, 1, 7))
 
 
 ```
@@ -100,37 +78,39 @@ ar1 <- arima(tsdata, order=c(7, 1, 7))
 ```{r}
 
 # auto-arima
-# forcast1 <- forecast(autoarima1, h=30)
+# forcast1 <- forecast(autoarima1, h=32)
 
 # ar 1
-forcast1 <- forecast(ar1, h=31)
+forcast1 <- forecast(arima1, h=32)
+
+```
+
+
+```{r}
+
+dampen = 0.05
+
+forcast1$mean[13:32] <- forcast1$mean[13:32] - (-forcast1$mean[13:32] * dampen)
 
 ```
 
 ```{r}
-
 texas_population = 29900000
-forcast1
-```
-```{r}
-MAE(y_pred = forcast1$fitted, y_true = train$Pop_Pct_Log)
 ```
 
 
 ```{r}
-# POINT ESTIMATE (mean)
-
-# test1$count <- forcast1$mean
-# 
-MAPE(y_pred = forcast1$fitted, y_true = train$Pop_Pct_Log)
-#summary(autoarima1)
-
-#exp(forcast1$x) * texas_population
-
-#exp(forcast1$fitted) * texas_population
-
-# forcast1$residuals
+forcast1$fitted
 ```
+
+
+
+```{r}
+# MAE(y_pred = forcast1$fitted, y_true = train$Pop_Pct_Log)
+MAE(y_pred = (exp(forcast1$mean) * texas_population), y_true = test$Daily_New_Cases)
+```
+
+
 ```{r}
 exp(forcast1$mean) * texas_population
 ```
@@ -163,13 +143,39 @@ pacf(forcast1$residuals)
 
 
 ```{r}
-summary(ar1)
+summary(arima1)
 ```
 
 
 ```{r}
-accuracy(ar1)
+accuracy(arima1)
 ```
+
+
+
+```{r}
+
+dampen = 0.01
+forcast1$mean[18:32]
+
+
+exp(-7.947745) * texas_population
+exp(-7.947745 - (7.947745 * dampen)) * texas_population
+# print(dampen)
+
+```
+
+
+
+```{r}
+logged_estimates <- c(-8.020378, -7.940148, -7.828991, -7.949109, -8.145284, -8.455114, -8.058859, -7.862050, -7.780685, -7.979019, -8.054743, -8.233071, -8.141257, -8.235591, -7.970465, -7.951575, -8.064691, -8.159449, -8.259858, -8.844908, -8.483163, -7.904360, -8.084564, -8.125988, -8.028346, -8.400526, -8.668172, -8.360132, -7.888808, -8.041250, -8.273526, -8.267645)
+```
+
+
+```{r}
+sd(logged_estimates) / 10
+```
+
 
 
 
